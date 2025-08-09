@@ -161,7 +161,19 @@
   }
   function pushObstacle(x){
     const lane = rand() < 0.5 ? 0 : 1;
-    const h = Math.round(H * (0.10 + rand()*0.28));
+  
+    // Minimum vertical clearance we want between top of chimney and player's collision area
+    const minClearance = Math.round(player.r * 1.2) + 8; // player radius * factor + padding
+  
+    // Max possible chimney height so the top doesn't cross above (laneY - minClearance)
+    // Ensure maxH is at least a small positive number
+    const maxH = Math.max( Math.round(H * 0.06), Math.round(Math.max(0, laneY[lane] - minClearance)) );
+  
+    // Generate a height but clamp to maxH
+    const rawH = Math.round(H * (0.10 + rand()*0.28));
+    const h = Math.min(rawH, maxH);
+  
+    // final safe push (width remains same)
     obstacles.push({ x: x, lane: lane, h: h, w: Math.round(W*0.06), passed:false });
   }
   function pushLantern(x){ const lane = rand() < 0.6 ? 1 : 0; const offsetY = (rand()*0.3 - 0.15) * (lane === 0 ? H*0.06 : H*0.045); lanterns.push({ x:x, lane: lane, offsetY: offsetY, taken:false }); }
@@ -276,7 +288,11 @@
     if(gameOver) return;
     if(!playing){ playing = true; tapHint.style.display = 'none'; }
     const newLane = player.lane === 0 ? 1 : 0;
-    player.originY = player.y; player.targetY = laneY[newLane]; player.lane = newLane; player.slideT = 1; player.y = player.originY;
+    const verticalBias = -Math.round(player.r * 0.08); // negative = up a bit
+    player.targetY = laneY[newLane] + verticalBias;
+    player.originY = player.y;
+    player.lane = newLane;
+    player.slideT = 1;
     playClick(); vibrate(15);
   }
 

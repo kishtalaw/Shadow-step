@@ -1,105 +1,379 @@
-<!DOCTYPE html>
+<!doctype html>
+
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Shadow Step</title>
-<style>
-  body { margin:0; background:linear-gradient(to top,#ff9a9e,#fad0c4); overflow:hidden; }
-  canvas { display:block; margin:0 auto; background:transparent; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Shadow Step — Single Page</title>
+  <style>
+    /* Light Chalk palette (soft sky + chalk accents) */
+    :root{
+      --bg-top: #E8F7FF;
+      --bg-bottom: #DCF3FF;
+      --player: #7EC8E3; /* chalk blue */
+      --accent: #FFD6A5; /* chalk warm */
+      --chalk: #F2F3F4;  /* chalk white/ivory */
+      --ui: #23343f;    /* soft slate */
+      --muted: #B3CDE0;
+      --shadow: rgba(35,52,63,0.12);
+    }html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom));}
+.page{display:flex;align-items:center;justify-content:center;height:100%;padding:20px;box-sizing:border-box}
+
+#game-wrap{width:100%;max-width:920px;height:680px;border-radius:14px;overflow:hidden;position:relative;box-shadow:0 16px 40px var(--shadow);background:transparent}
+canvas{display:block;width:100%;height:100%;background:transparent}
+
+/* UI */
+.ui-top{position:absolute;left:16px;top:14px;right:16px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
+.title{font-weight:800;color:var(--ui);font-size:18px;pointer-events:auto;user-select:none}
+.subtitle{font-weight:600;color:var(--muted);font-size:12px;margin-top:4px}
+.score-badge{background:rgba(255,255,255,0.75);padding:8px 12px;border-radius:12px;color:var(--ui);font-weight:700;pointer-events:auto}
+
+.tap-hint{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);background:rgba(255,255,255,0.9);padding:10px 14px;border-radius:999px;color:var(--ui);font-weight:700;pointer-events:none;box-shadow:0 6px 20px rgba(35,52,63,0.08);animation:float 1.6s ease-in-out infinite}
+@keyframes float{0%{transform:translate(-50%,-48%)}50%{transform:translate(-50%,-52%)}100%{transform:translate(-50%,-48%)}}
+
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:white;padding:18px;border-radius:12px;box-shadow:0 10px 40px rgba(35,52,63,0.14);min-width:280px;display:none}
+.modal.show{display:block}
+.modal h3{margin:0 0 6px 0;color:var(--ui)}
+.modal p{margin:0 0 14px 0;color:#50606f}
+.modal .actions{display:flex;gap:8px;justify-content:flex-end}
+.btn{background:var(--player);border:none;padding:8px 12px;border-radius:8px;color:white;font-weight:700;cursor:pointer}
+.btn.ghost{background:transparent;border:1px solid var(--muted);color:var(--ui)}
+
+footer{position:absolute;left:16px;bottom:12px;color:#3e5666;font-size:13px}
+
+@media (max-width:520px){#game-wrap{height:560px}}
+
+  </style>
 </head>
 <body>
-<canvas id="game"></canvas>
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+  <div class="page">
+    <div id="game-wrap">
+      <canvas id="game"></canvas><div class="ui-top">
+    <div style="pointer-events:auto">
+      <div class="title">Shadow Step</div>
+      <div class="subtitle">Tap to step — switch rooftops</div>
+    </div>
+    <div class="score-badge" id="score">Score: 0</div>
+  </div>
 
-let laneY = [canvas.height*0.4, canvas.height*0.7];
-let player = { x: 100, y: laneY[0], r: 20, lane: 0 };
-let obstacles = [];
-let speed = 4;
-let score = 0;
-let gameOver = false;
+  <div class="tap-hint" id="tapHint">Tap • Switch</div>
 
-function spawnObstacle(){
-  let lane = Math.random() > 0.5 ? 0 : 1;
-  obstacles.push({ x: canvas.width+50, y: laneY[lane], lane: lane, w: 40, h: 40 });
-}
+  <div class="modal" id="modal">
+    <h3 id="modalTitle">Nice Run</h3>
+    <p id="modalText">Score: 0</p>
+    <div class="actions">
+      <button class="btn" id="shareBtn">Download Snapshot</button>
+      <button class="btn ghost" id="retryBtn">Retry</button>
+    </div>
+  </div>
 
-function resetGame(){
-  player.lane = 0;
-  player.y = laneY[0];
-  obstacles = [];
-  score = 0;
-  speed = 4;
-  gameOver = false;
-}
+  <footer>Tip: the lanes move at different speeds — use rhythm to survive.</footer>
+</div>
 
-function drawPlayer(){
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
-  ctx.fillStyle = "black";
-  ctx.fill();
-}
+  </div><script>
+/* Shadow Step — Single Page Prototype
+   - One-tap: switch between foreground/background rooftops
+   - Smooth lane animation, parallax, lantern collectibles, chimneys obstacles
+   - Minimal chalk-style silhouette rendering using canvas
+   - Local highscore, PNG snapshot, vibration & optional tones
+*/
 
-function drawObstacles(){
-  ctx.fillStyle = "black";
-  obstacles.forEach(o => {
-    ctx.fillRect(o.x-o.w/2, o.y-o.h/2, o.w, o.h);
-  });
-}
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d', { alpha: true });
 
-function update(){
-  if(gameOver) return;
-  obstacles.forEach(o => o.x -= speed);
-  obstacles = obstacles.filter(o => o.x > -50);
-  
-  // collision detection
-  obstacles.forEach(o => {
-    let dx = player.x - o.x;
-    let dy = player.y - o.y;
-    let dist = Math.sqrt(dx*dx + dy*dy);
-    if(dist < player.r + o.w/2){
-      gameOver = true;
+  // DPR / sizing
+  let DPR = Math.max(1, window.devicePixelRatio || 1);
+  function resize(){
+    const rect = document.getElementById('game-wrap').getBoundingClientRect();
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    canvas.width = Math.floor(rect.width * DPR);
+    canvas.height = Math.floor(rect.height * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // UI elements
+  const scoreEl = document.getElementById('score');
+  const tapHint = document.getElementById('tapHint');
+  const modal = document.getElementById('modal');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalText = document.getElementById('modalText');
+  const shareBtn = document.getElementById('shareBtn');
+  const retryBtn = document.getElementById('retryBtn');
+
+  // sound & vibration
+  let soundOn = true;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null;
+  function playClick(){ if(!soundOn) return; if(!AudioCtx) return; if(!audioCtx) audioCtx = new AudioCtx(); const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type='sine'; o.frequency.value = 440; g.gain.value = 0.04; o.connect(g); g.connect(audioCtx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.08); o.stop(audioCtx.currentTime + 0.09); }
+
+  function vibrate(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
+
+  // game variables
+  let W = canvas.width / DPR, H = canvas.height / DPR;
+  function dims(){ W = canvas.width / DPR; H = canvas.height / DPR; }
+  dims();
+
+  // lanes (foreground, background) positions
+  const laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
+  const laneSpeeds = [1.0, 0.6]; // foreground moves faster
+
+  // player
+  const player = {
+    x: Math.round(W * 0.18),
+    lane: 0,            // 0 = foreground, 1 = background
+    y: laneY[0],
+    targetY: laneY[0],
+    r: Math.round(Math.min(W,H) * 0.032),
+    slideT: 0,
+    slideDur: 160, // ms animation for lane switch
+  };
+
+  // obstacles and collectibles
+  let obstacles = []; // chimneys: {x, lane, h}
+  let lanterns = [];  // lanterns: {x, lane, offsetY}
+  let particles = [];
+
+  let frame = 0;
+  let playing = false;
+  let gameOver = false;
+  let score = 0;
+  let speed = Math.max(3, Math.round(W * 0.006));
+  const spawnBase = Math.round(W * 0.9);
+  const minSpawnGap = Math.round(W * 0.28);
+  const maxSpawnGap = Math.round(W * 0.48);
+
+  // helpers
+  function rand(){ return Math.random(); }
+
+  // seeded daily RNG (optional) - left here for future seeded mode
+  function getDailySeedNumber(){ const today = new Date(); const y = today.getFullYear(); const m = String(today.getMonth()+1).padStart(2,'0'); const d = String(today.getDate()).padStart(2,'0'); return parseInt('' + y + m + d, 10); }
+
+  // generate initial obstacles
+  function resetWorld(){
+    obstacles = []; lanterns = []; particles = [];
+    score = 0; frame = 0; speed = Math.max(3, Math.round(W * 0.006));
+    playing = false; gameOver = false;
+    player.lane = 0; player.y = laneY[0]; player.targetY = laneY[0]; player.slideT = 0;
+    // pre-populate a few obstacles spaced out
+    let x = W * 0.9;
+    for(let i=0;i<5;i++){
+      pushObstacle(x);
+      if(rand() < 0.5) pushLantern(x - (minSpawnGap*0.45));
+      x += minSpawnGap + rand()*(maxSpawnGap-minSpawnGap);
     }
+    updateScoreUI();
+    tapHint.style.display = 'block';
+    modal.classList.remove('show');
+  }
+
+  function pushObstacle(x){
+    const lane = rand() < 0.5 ? 0 : 1;
+    const h = Math.round(H * (0.10 + rand()*0.28));
+    obstacles.push({ x: x, lane: lane, h: h, w: Math.round(W*0.06), passed:false });
+  }
+  function pushLantern(x){ const lane = rand() < 0.6 ? 1 : 0; const offsetY = (rand()*0.3 - 0.15) * (lane === 0 ? H*0.06 : H*0.045); lanterns.push({ x:x, lane: lane, offsetY: offsetY, taken:false }); }
+
+  // collision check
+  function circleRectCollision(cx, cy, r, rx, ry, rw, rh){ // rx,ry top-left
+    // closest point
+    let closestX = Math.max(rx, Math.min(cx, rx+rw));
+    let closestY = Math.max(ry, Math.min(cy, ry+rh));
+    const dx = cx - closestX, dy = cy - closestY; return (dx*dx + dy*dy) < (r*r + 0.0001);
+  }
+
+  // drawing helpers (chalky strokes)
+  function setStrokeChalk(){ ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, Math.min(W,H)*0.006); ctx.strokeStyle = 'rgba(242,243,244,0.96)'; }
+  function setFillChalk(){ ctx.fillStyle = 'rgba(126,200,227,0.98)'; }
+
+  // main update loop
+  let lastTime = performance.now();
+  function loop(now){
+    const dt = Math.min(40, now - lastTime); lastTime = now; frame += dt;
+    if(!gameOver && playing){
+      // move world
+      const move = (speed * (dt/16));
+      for(const o of obstacles) o.x -= move * laneSpeeds[o.lane];
+      for(const l of lanterns) l.x -= move * laneSpeeds[l.lane];
+      // spawn logic
+      if(obstacles.length === 0 || (obstacles[obstacles.length-1].x < W - minSpawnGap)){
+        const gap = minSpawnGap + rand()*(maxSpawnGap-minSpawnGap);
+        pushObstacle(W + gap);
+        if(rand() < 0.6) pushLantern(W + gap - (minSpawnGap*0.4));
+      }
+      // remove offscreen
+      if(obstacles.length && obstacles[0].x < -200) obstacles.shift();
+      if(lanterns.length && lanterns[0].x < -200) lanterns.shift();
+
+      // collisions
+      const py = player.y;
+      for(const o of obstacles){
+        const rx = o.x - o.w/2, ry = o.lane === 0 ? laneY[0] - o.h : laneY[1] - o.h; // top of chimney
+        if(circleRectCollision(player.x, py, player.r, rx, ry, o.w, o.h)){
+          // collision!
+          gameOver = true; playing = false; vibrate(80); playClick(); showGameOver();
+        }
+        if(!o.passed && o.x + o.w/2 < player.x){ o.passed = true; score += 12; updateScoreUI(); }
+      }
+      // lantern pickup
+      for(const L of lanterns){ if(!L.taken){ const ly = laneY[L.lane] + L.offsetY; if(Math.hypot(player.x - L.x, player.y - ly) < player.r + Math.max(8, player.r*0.6)){ L.taken = true; score += 30; spawnParticles(L.x, ly); vibrate(20); playClick(); updateScoreUI(); } } }
+
+      // speed ramp
+      speed += 0.0009 * (dt/16);
+      score += 0.01 * (dt/16);
+    }
+
+    // animate player slide
+    // slideT is ms elapsed since start of slide; when > slideDur we clamp
+    if(player.slideT > 0){ player.slideT += dt; const p = Math.min(1, player.slideT / player.slideDur); // ease out
+      const ease = 1 - Math.pow(1-p, 3);
+      player.y = player.originY + (player.targetY - player.originY) * ease;
+      if(player.slideT >= player.slideDur){ player.slideT = 0; player.y = player.targetY; }
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // spawn tiny particles for pickup
+  function spawnParticles(x,y){ for(let i=0;i<18;i++){ particles.push({ x:x + (rand()-0.5)*12, y:y + (rand()-0.5)*12, vx:(rand()-0.5)*2, vy:-1 - rand()*2, life:800, age:0, c: (i%2===0? 'rgba(255,214,165,0.95)' : 'rgba(126,200,227,0.95)') }); } }
+
+  // draw everything
+  function draw(){
+    // clear
+    ctx.clearRect(0,0,W,H);
+
+    // sky has CSS gradient; draw subtle vignette
+    // draw distant skyline (simple silhouettes)
+    const skylineH = Math.round(H*0.18);
+    ctx.save();
+    ctx.globalAlpha = 0.28; ctx.fillStyle = 'rgba(35,52,63,0.06)';
+    ctx.fillRect(0, H - skylineH - 20, W, skylineH+20);
+    ctx.restore();
+
+    // draw lanes (rooftops) as chalk strokes with slight parallax
+    for(let i=0;i<2;i++){
+      const y = laneY[i];
+      const speedMul = laneSpeeds[i];
+      // draw repeated simple rooftops to emulate movement (parallax)
+      const patternW = 180; ctx.save(); ctx.translate(-((frame * 0.02 * speedMul) % patternW), 0);
+      for(let px = -patternW; px < W + patternW; px += patternW){
+        drawRoof(px, y, i);
+      }
+      ctx.restore();
+    }
+
+    // draw lanterns
+    for(const L of lanterns){ if(L.taken) continue; const lx = L.x, ly = laneY[L.lane] + L.offsetY; drawLantern(lx, ly); }
+
+    // draw obstacles (chimneys)
+    for(const o of obstacles){ drawChimney(o); }
+
+    // draw particles
+    for(const p of particles){ p.age += 16; p.x += p.vx; p.y += p.vy; p.vy += 0.06; ctx.beginPath(); ctx.fillStyle = p.c; ctx.globalAlpha = 1 - (p.age / p.life); ctx.ellipse(p.x, p.y, 3, 3, 0, 0, Math.PI*2); ctx.fill(); }
+    particles = particles.filter(p => p.age < p.life);
+    ctx.globalAlpha = 1;
+
+    // draw player (chalk silhouette)
+    drawPlayer();
+
+    // HUD
+    scoreEl.textContent = 'Score: ' + Math.floor(score);
+    // game over text drawn via modal
+  }
+
+  function drawRoof(x, y, laneIndex){
+    // roof base
+    ctx.beginPath(); ctx.fillStyle = 'rgba(255,255,255,0)'; // no fill
+    setStrokeChalk(); ctx.strokeStyle = 'rgba(242,243,244,0.9)';
+    // a wavy roof line
+    ctx.moveTo(x, y);
+    ctx.lineTo(x+20, y-6);
+    ctx.lineTo(x+40, y+2);
+    ctx.lineTo(x+80, y-4);
+    ctx.lineTo(x+120, y+6);
+    ctx.lineTo(x+patternW, y);
+    ctx.stroke();
+
+    // small gutters/shadows
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(35,52,63,0.05)'; ctx.lineWidth = 1; ctx.moveTo(x+6, y+6); ctx.lineTo(x+140, y+8); ctx.stroke();
+  }
+
+  function drawPlayer(){
+    // small shadow (chalk smudge)
+    ctx.beginPath(); ctx.fillStyle = 'rgba(35,52,63,0.06)'; ctx.ellipse(player.x+6, player.y+player.r*0.9, player.r*1.1, player.r*0.45, 0, 0, Math.PI*2); ctx.fill();
+    // body
+    ctx.beginPath(); ctx.fillStyle = 'rgba(35,52,63,0.98)'; ctx.ellipse(player.x, player.y, player.r, player.r*0.95, 0, 0, Math.PI*2); ctx.fill();
+    // chalk outline
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(242,243,244,0.95)'; ctx.lineWidth = Math.max(2, player.r*0.12); ctx.ellipse(player.x, player.y, player.r*0.86, player.r*0.82, 0, 0, Math.PI*2); ctx.stroke();
+  }
+
+  function drawChimney(o){
+    const cx = o.x, lane = o.lane; const w = o.w, h = o.h; const baseY = laneY[lane];
+    const x = cx - w/2, y = baseY - h;
+    // body
+    ctx.beginPath(); ctx.fillStyle = 'rgba(35,52,63,0.95)'; ctx.fillRect(x, y, w, h);
+    // chalk outline
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(242,243,244,0.9)'; ctx.lineWidth = Math.max(2, W*0.006); ctx.strokeRect(x, y, w, h);
+    // small cap
+    ctx.beginPath(); ctx.fillStyle = 'rgba(35,52,63,0.98)'; ctx.fillRect(x - w*0.2, y - (w*0.28), w*1.4, w*0.28);
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(242,243,244,0.9)'; ctx.strokeRect(x - w*0.2, y - (w*0.28), w*1.4, w*0.28);
+  }
+
+  function drawLantern(x,y){
+    // glow
+    ctx.beginPath(); ctx.fillStyle = 'rgba(255,214,165,0.08)'; ctx.ellipse(x, y, 22, 22, 0, 0, Math.PI*2); ctx.fill();
+    // body
+    ctx.beginPath(); ctx.fillStyle = 'rgba(255,214,165,0.98)'; ctx.ellipse(x, y, 10, 12, 0, 0, Math.PI*2); ctx.fill();
+    // chalk outline
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(242,243,244,0.95)'; ctx.lineWidth = 1.5; ctx.ellipse(x, y, 10, 12, 0, 0, Math.PI*2); ctx.stroke();
+    // small string
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(242,243,244,0.5)'; ctx.lineWidth = 1; ctx.moveTo(x, y-12); ctx.lineTo(x, y-20); ctx.stroke();
+  }
+
+  // lane switch (tap)
+  function switchLane(){
+    if(gameOver) return;
+    if(!playing){ playing = true; tapHint.style.display = 'none'; }
+    const newLane = player.lane === 0 ? 1 : 0;
+    player.originY = player.y; player.targetY = laneY[newLane]; player.lane = newLane; player.slideT = 1; player.y = player.originY; player.slideStart = performance.now();
+    // play & vibrate
+    playClick(); vibrate(15);
+  }
+
+  // UI functions
+  function updateScoreUI(){ scoreEl.textContent = 'Score: ' + Math.floor(score); }
+
+  function showGameOver(){
+    modalTitle.textContent = 'You stumbled';
+    modalText.textContent = 'Score: ' + Math.floor(score) + ' — Tap to retry';
+    modal.classList.add('show');
+    // highscore check
+    const prev = parseInt(localStorage.getItem('ss_highscore') || '0',10);
+    if(Math.floor(score) > prev){ localStorage.setItem('ss_highscore', String(Math.floor(score))); modalTitle.textContent = 'New High Score!'; }
+  }
+
+  // snapshot download
+  shareBtn.addEventListener('click', ()=>{
+    try{
+      const link = document.createElement('a'); link.download = `shadow-step-${Date.now()}.png`; link.href = canvas.toDataURL('image/png'); link.click();
+    }catch(e){ window.open(canvas.toDataURL()); }
   });
-  
-  score += 0.01;
-  if(Math.random() < 0.02) spawnObstacle();
-  speed += 0.0005;
-}
+  retryBtn.addEventListener('click', ()=>{ modal.classList.remove('show'); resetWorld(); });
 
-function drawScore(){
-  ctx.fillStyle = "black";
-  ctx.font = "24px sans-serif";
-  ctx.fillText("Score: " + Math.floor(score), 20, 40);
-  if(gameOver){
-    ctx.fillText("Game Over! Tap to Restart", 20, 80);
-  }
-}
+  // inputs
+  canvas.addEventListener('pointerdown', ()=>{ if(gameOver){ resetWorld(); } else { switchLane(); } });
+  window.addEventListener('keydown', (e)=>{ if(e.code === 'Space'){ e.preventDefault(); if(gameOver){ resetWorld(); } else { switchLane(); } } });
 
-function loop(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawPlayer();
-  drawObstacles();
-  drawScore();
-  update();
-  requestAnimationFrame(loop);
-}
+  // initial
+  resetWorld(); requestAnimationFrame(loop);
 
-canvas.addEventListener("click", () => {
-  if(gameOver){
-    resetGame();
-  } else {
-    player.lane = player.lane === 0 ? 1 : 0;
-    player.y = laneY[player.lane];
-  }
-});
+  // expose small debug / settings (optional)
+  window.__shadowStep = { resetWorld };
 
-loop();
-</script>
-</body>
+})();
+</script></body>
 </html>

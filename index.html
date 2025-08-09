@@ -159,41 +159,40 @@
     tapHint.style.display = 'block';
     modal.classList.remove('show');
   }
-  function pushObstacle(atX){
-    const attempts = 3;
-    for(let attempt = 0; attempt < attempts; attempt++){
-      const lane = Math.random() < 0.5 ? 0 : 1;
-      const padding = 8;
-      const neededClearance = Math.round(player.r * 1.15) + padding;
-      const maxH = Math.max(0, Math.floor(laneY[lane] - neededClearance));
-  
-      const rawH = Math.round(H * (0.10 + Math.random() * 0.28));
-      let h = Math.min(rawH, maxH);
-  
-      if (maxH <= Math.round(player.r * 0.6)) {
-        if (attempt < attempts - 1) continue;
-        h = Math.max(Math.round(player.r * 0.6), maxH);
-      }
-  
-      const minH = Math.round(Math.max(8, player.r * 0.9));
-      h = Math.max(minH, h);
-  
-      const w = Math.round(W * 0.06);
-      obstacles.push({ x: atX, lane: lane, h: h, w: w, passed: false });
-      return;
+  function pushObstacle(atX) {
+  const attempts = 3;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const lane = Math.random() < 0.5 ? 0 : 1;
+    const padding = 8;
+    const neededClearance = Math.round(player.r * 1.15) + padding;
+    const maxH = Math.max(0, Math.floor(laneY[lane] - neededClearance));
+
+    let rawH = Math.round(H * (0.10 + Math.random() * 0.28));
+    let h = Math.min(rawH, maxH);
+
+    if (maxH <= Math.round(player.r * 0.6)) {
+      if (attempt < attempts - 1) continue;
+      h = Math.max(Math.round(player.r * 0.6), maxH);
     }
-    
-    // Fallback safe obstacle
-    const safeH = Math.max(8, Math.round(player.r * 0.9));
-    const fallbackLane = 0;
-    obstacles.push({
-      x: atX,
-      lane: fallbackLane,
-      h: safeH,
-      w: Math.round(W * 0.06),
-      passed: false
-    });
+
+    const minH = Math.round(Math.max(8, player.r * 0.9));
+    h = Math.max(minH, h);
+
+    const w = Math.round(W * 0.06);
+    obstacles.push({ x: atX, lane: lane, h: h, w: w, passed: false });
+    return;
   }
+
+  // Fallback: safe, small chimney on foreground lane
+  const safeH = Math.max(8, Math.round(player.r * 0.9));
+  obstacles.push({
+    x: atX,
+    lane: 0,
+    h: safeH,
+    w: Math.round(W * 0.06),
+    passed: false
+  });
+}
   function pushLantern(x){ const lane = rand() < 0.6 ? 1 : 0; const offsetY = (rand()*0.3 - 0.15) * (lane === 0 ? H*0.06 : H*0.045); lanterns.push({ x:x, lane: lane, offsetY: offsetY, taken:false }); }
 
   function circleRectCollision(cx, cy, r, rx, ry, rw, rh){

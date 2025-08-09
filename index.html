@@ -72,6 +72,7 @@
 
   // DPR and declaration of shared dims before use
   let DPR = Math.max(1, window.devicePixelRatio || 1);
+  let lastTime = performance.now();
   let W, H, patternW;
 
   // dims() can now safely set W/H/patternW
@@ -203,7 +204,7 @@
 
   function setStrokeChalk(){ ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, Math.min(W,H)*0.006); ctx.strokeStyle = 'rgba(242,243,244,0.96)'; }
 
-  let lastTime = performance.now();
+
   let lastSpawnTime = performance.now();
   function loop(now){
     const dt = Math.min(40, now - lastTime); lastTime = now; frame += dt;
@@ -213,10 +214,14 @@
       for(const l of lanterns) l.x -= move * laneSpeeds[l.lane];
 
       const minGapPx = player.r * 6;  // adjust factor as needed for reaction time
+
+      const minDistance = player.r * 6; // pixels; adjust for reaction time
+      const minTimeGap = 400;           // milliseconds between spawns
+      
       if (obstacles.length === 0 ||
           (obstacles[obstacles.length - 1].x < W - minGapPx &&
-           lastSpawnTime + 400 < performance.now())) { // ensuring a minimal time-based gap
-        pushObstacle(W + 100);
+           performance.now() - lastSpawnTime > minTimeGap)) { // ensuring a minimal time-based gap
+        pushObstacle(W + (W * 0.3)); // spawn just beyond right edge
         lastSpawnTime = performance.now();
       }
 

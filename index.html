@@ -217,7 +217,7 @@
       if (obstacles.length === 0 ||
           (obstacles[obstacles.length - 1].x < W - minGapPx &&
            lastSpawnTime + 400 < performance.now())) { // ensuring a minimal time-based gap
-        pushObstacle(W + 10);
+        pushObstacle(W + 100);
         lastSpawnTime = performance.now();
       }
 

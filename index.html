@@ -160,21 +160,51 @@
     modal.classList.remove('show');
   }
   function pushObstacle(x){
-    const lane = rand() < 0.5 ? 0 : 1;
+    // Attempt to pick a lane and chimney height that will definitely be passable.
+    // We'll try a few times to avoid forcing a too-tall chimney in the current lane.
+    const attempts = 3;
+    for(let attempt = 0; attempt < attempts; attempt++){
+      const lane = Math.random() < 0.5 ? 0 : 1;
   
-    // Minimum vertical clearance we want between top of chimney and player's collision area
-    const minClearance = Math.round(player.r * 1.2) + 8; // player radius * factor + padding
+      // Minimum vertical clearance we want between top of chimney and player center
+      const padding = 8; // extra safe padding in px
+      const neededClearance = Math.round(player.r * 1.15) + padding; // player radius * factor + padding
   
-    // Max possible chimney height so the top doesn't cross above (laneY - minClearance)
-    // Ensure maxH is at least a small positive number
-    const maxH = Math.max( Math.round(H * 0.06), Math.round(Math.max(0, laneY[lane] - minClearance)) );
+      // Maximum chimney height so top stays below (laneY - neededClearance)
+      // Ensure we don't compute a negative maxH
+      const maxH = Math.max(0, Math.floor(laneY[lane] - neededClearance));
   
-    // Generate a height but clamp to maxH
-    const rawH = Math.round(H * (0.10 + rand()*0.28));
-    const h = Math.min(rawH, maxH);
+      // Generate a raw height value from the usual distribution, but clamp to maxH
+      const rawH = Math.round(H * (0.10 + Math.random() * 0.28));
+      let h = Math.min(rawH, maxH);
   
-    // final safe push (width remains same)
-    obstacles.push({ x: x, lane: lane, h: h, w: Math.round(W*0.06), passed:false });
+      // If the computed maxH is very small (meaning the lane doesn't have room),
+      // prefer the other lane in next attempt. If this is the last attempt, force-fit by using maxH.
+      if (maxH <= Math.round(player.r * 0.6)) {
+        // very little room in this lane — try again to pick the other lane
+        if (attempt < attempts - 1) continue;
+        // last attempt: force small chimney so it's passable
+        h = Math.max( Math.round(player.r * 0.6), maxH );
+      }
+  
+      // Set a minimum chimney height so obstacles still look meaningful
+      const minH = Math.round(Math.max(8, player.r * 0.9));
+      h = Math.max(minH, h);
+  
+      // Final push
+      obstacles.push({
+        x: x,
+        lane: lane,
+        h: h,
+        w: Math.round(W * 0.06),
+        passed: false
+      });
+      return;
+    }
+  
+    // Fallback (shouldn't hit): force a safe small chimney on foreground lane
+    const safeH = Math.max(8, Math.round(player.r * 0.9));
+    obstacles.push({ x: x, lane: 0, h: safeH, w: Math.round(W * 0.06), passed: false });
   }
   function pushLantern(x){ const lane = rand() < 0.6 ? 1 : 0; const offsetY = (rand()*0.3 - 0.15) * (lane === 0 ? H*0.06 : H*0.045); lanterns.push({ x:x, lane: lane, offsetY: offsetY, taken:false }); }
 
@@ -288,7 +318,7 @@
     if(gameOver) return;
     if(!playing){ playing = true; tapHint.style.display = 'none'; }
     const newLane = player.lane === 0 ? 1 : 0;
-    const verticalBias = -Math.round(player.r * 0.8); // negative = up a bit
+    const verticalBias = -Math.round(player.r * 0.08); // negative = up a bit
     player.targetY = laneY[newLane] + verticalBias;
     player.originY = player.y;
     player.lane = newLane;

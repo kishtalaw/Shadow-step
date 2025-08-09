@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shadow Step</title>
+<style>
+  body { margin:0; background:linear-gradient(to top,#ff9a9e,#fad0c4); overflow:hidden; }
+  canvas { display:block; margin:0 auto; background:transparent; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let laneY = [canvas.height*0.4, canvas.height*0.7];
+let player = { x: 100, y: laneY[0], r: 20, lane: 0 };
+let obstacles = [];
+let speed = 4;
+let score = 0;
+let gameOver = false;
+
+function spawnObstacle(){
+  let lane = Math.random() > 0.5 ? 0 : 1;
+  obstacles.push({ x: canvas.width+50, y: laneY[lane], lane: lane, w: 40, h: 40 });
+}
+
+function resetGame(){
+  player.lane = 0;
+  player.y = laneY[0];
+  obstacles = [];
+  score = 0;
+  speed = 4;
+  gameOver = false;
+}
+
+function drawPlayer(){
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
+  ctx.fillStyle = "black";
+  ctx.fill();
+}
+
+function drawObstacles(){
+  ctx.fillStyle = "black";
+  obstacles.forEach(o => {
+    ctx.fillRect(o.x-o.w/2, o.y-o.h/2, o.w, o.h);
+  });
+}
+
+function update(){
+  if(gameOver) return;
+  obstacles.forEach(o => o.x -= speed);
+  obstacles = obstacles.filter(o => o.x > -50);
+  
+  // collision detection
+  obstacles.forEach(o => {
+    let dx = player.x - o.x;
+    let dy = player.y - o.y;
+    let dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < player.r + o.w/2){
+      gameOver = true;
+    }
+  });
+  
+  score += 0.01;
+  if(Math.random() < 0.02) spawnObstacle();
+  speed += 0.0005;
+}
+
+function drawScore(){
+  ctx.fillStyle = "black";
+  ctx.font = "24px sans-serif";
+  ctx.fillText("Score: " + Math.floor(score), 20, 40);
+  if(gameOver){
+    ctx.fillText("Game Over! Tap to Restart", 20, 80);
+  }
+}
+
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawPlayer();
+  drawObstacles();
+  drawScore();
+  update();
+  requestAnimationFrame(loop);
+}
+
+canvas.addEventListener("click", () => {
+  if(gameOver){
+    resetGame();
+  } else {
+    player.lane = player.lane === 0 ? 1 : 0;
+    player.y = laneY[player.lane];
+  }
+});
+
+loop();
+</script>
+</body>
+</html>

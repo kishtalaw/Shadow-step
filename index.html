@@ -65,15 +65,25 @@
   </div>
 
 <script>
-/* Shadow Step — Fixed: patternW scope & responsive update */
+/* Shadow Step — initialization order fixed */
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha: true });
 
-  // DPR / sizing
+  // DPR and declaration of shared dims before use
   let DPR = Math.max(1, window.devicePixelRatio || 1);
-  let patternW = 180; // <-- make this global and update on resize
+  let W, H, patternW;
 
+  // dims() can now safely set W/H/patternW
+  function dims(){
+    W = canvas.width / DPR;
+    H = canvas.height / DPR;
+    patternW = Math.max(120, Math.round(W * 0.18));
+    // if player exists, update r (player declared later)
+    if(window.__ss_player) window.__ss_player.r = Math.round(Math.min(W,H) * 0.032);
+  }
+
+  // resize (calls dims after sizing)
   function resize(){
     const rect = document.getElementById('game-wrap').getBoundingClientRect();
     canvas.style.width = rect.width + 'px';
@@ -82,7 +92,6 @@
     canvas.height = Math.floor(rect.height * DPR);
     ctx.setTransform(DPR,0,0,DPR,0,0);
     dims();
-    patternW = Math.max(120, Math.round((canvas.width/DPR) * 0.18)); // responsive pattern width
   }
   window.addEventListener('resize', resize);
   resize();
@@ -103,26 +112,23 @@
   function playClick(){ if(!soundOn) return; if(!AudioCtx) return; if(!audioCtx) audioCtx = new AudioCtx(); const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type='sine'; o.frequency.value = 440; g.gain.value = 0.04; o.connect(g); g.connect(audioCtx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.08); o.stop(audioCtx.currentTime + 0.09); }
   function vibrate(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
 
-  // game variables
-  let W = canvas.width / DPR, H = canvas.height / DPR;
-  function dims(){ W = canvas.width / DPR; H = canvas.height / DPR; patternW = Math.max(120, Math.round(W * 0.18)); player.r = Math.round(Math.min(W,H) * 0.032); }
+  // lanes (use dims first to set W/H)
   dims();
-
-  // lanes
   const laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
   const laneSpeeds = [1.0, 0.6];
 
-  // player
+  // player (attach to window for dims to update r if needed)
   const player = {
-    x: Math.round(W * 0.18),
+    x: Math.round((W || 800) * 0.18),
     lane: 0,
     y: laneY[0],
     targetY: laneY[0],
-    r: Math.round(Math.min(W,H) * 0.032),
+    r: Math.round(Math.min((W||800),(H||600)) * 0.032),
     slideT: 0,
     slideDur: 160,
     originY: laneY[0]
   };
+  window.__ss_player = player;
 
   // world
   let obstacles = [];
@@ -132,16 +138,15 @@
   let playing = false;
   let gameOver = false;
   let score = 0;
-  let speed = Math.max(3, Math.round(W * 0.006));
-  const spawnBase = Math.round(W * 0.9);
-  const minSpawnGap = Math.round(W * 0.28);
-  const maxSpawnGap = Math.round(W * 0.48);
+  let speed = Math.max(3, Math.round((W||800) * 0.006));
+  const minSpawnGap = Math.round((W||800) * 0.28);
+  const maxSpawnGap = Math.round((W||800) * 0.48);
 
   function rand(){ return Math.random(); }
 
   function resetWorld(){
     obstacles = []; lanterns = []; particles = [];
-    score = 0; frame = 0; speed = Math.max(3, Math.round(W * 0.006));
+    score = 0; frame = 0; speed = Math.max(3, Math.round((W||800) * 0.006));
     playing = false; gameOver = false;
     player.lane = 0; player.y = laneY[0]; player.targetY = laneY[0]; player.slideT = 0; player.originY = player.y;
     let x = W * 0.9;

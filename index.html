@@ -3,17 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Shadow Step — Alternation Tuning</title>
+  <title>Shadow Step — Fixed & Adaptive</title>
   <style>
-    :root {
-      --bg-top: #E8F7FF;
-      --bg-bottom: #DCF3FF;
-      --player: #7EC8E3;
-      --accent: #FFD6A5;
-      --chalk: #F2F3F4;
-      --ui: #23343f;
-      --muted: #B3CDE0;
-      --shadow: rgba(35,52,63,0.12);
+    :root{
+      --bg-top:#E8F7FF; --bg-bottom:#DCF3FF; --player:#7EC8E3; --accent:#FFD6A5;
+      --chalk:#F2F3F4; --ui:#23343f; --muted:#B3CDE0; --shadow:rgba(35,52,63,0.12);
     }
     html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom));}
     .page{display:flex;align-items:center;justify-content:center;height:100%;padding:20px;box-sizing:border-box}
@@ -56,60 +50,27 @@
           <button class="btn ghost" id="retryBtn">Retry</button>
         </div>
       </div>
-      <footer>Tip: lanes now alternate more frequently — use rhythm to survive.</footer>
+      <footer id="tip">Tip: lanes move at same speed — rhythm beats haste.</footer>
     </div>
   </div>
+
 <script>
 (() => {
+  // ---- canvas + sizing ----
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha: true });
   let DPR = Math.max(1, window.devicePixelRatio || 1);
-  let W = 800, H = 600, patternW;
+  let W = 800, H = 600, patternW = 160;
 
-  // === Adaptive difficulty params (tweak these) ===
-let difficulty = 0.0;              // 0 = easy start, grows with progress
-const DIFF_GROW_PER_PASS = 0.015;  // how much difficulty increments per passed obstacle
-const DIFF_GROW_PER_SCORE = 0.00002; // extra growth per score (small)
-const DIFF_MAX = 1.0;              // cap difficulty
-const BASE_SPEED = Math.max(3, Math.round(W * 0.006));
-const MAX_SPEED = BASE_SPEED * 1.9; // how fast it can get (cap)
-const BASE_OPPOSITE_GAP_FRAC = 0.34; // fraction of W
-const MIN_OPPOSITE_GAP_FRAC = 0.20;  // tightest fraction
-
-function speedForDifficulty() {
-  // linear interpolation between BASE_SPEED and MAX_SPEED
-  return BASE_SPEED + (MAX_SPEED - BASE_SPEED) * (difficulty / DIFF_MAX);
-}
-
-function oppositeGapForDifficulty() {
-  // reduces gap as difficulty grows, clamped
-  const frac = BASE_OPPOSITE_GAP_FRAC - (BASE_OPPOSITE_GAP_FRAC - MIN_OPPOSITE_GAP_FRAC) * (difficulty / DIFF_MAX);
-  return Math.round(W * Math.max(MIN_OPPOSITE_GAP_FRAC, frac));
-}
-
-// In your loop where you previously updated speed or computed gaps, replace with:
-// speed = speedForDifficulty();
-// const minOppositeLaneGap = oppositeGapForDifficulty();
-
-// Then after you mark an obstacle as passed (inside obstacles.forEach):
-if(!o.passed && o.x+o.w/2 < player.x){
-  o.passed=true;
-  score+=12;
-  // grow difficulty as reward for surviving
-  difficulty = Math.min(DIFF_MAX, difficulty + DIFF_GROW_PER_PASS + DIFF_GROW_PER_SCORE * score);
-  scoreEl.textContent='Score: '+Math.floor(score);
-}
-
-  // lane center positions declared early to avoid TDZ issues
+  // lane centers declared early (avoid TDZ)
   let laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
-  const laneSpeeds = [1.0, 1.0];
 
   function dims(){
     W = canvas.width / DPR;
     H = canvas.height / DPR;
     patternW = Math.max(120, Math.round(W * 0.18));
     laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
-    if(window.__ss_player) {
+    if(window.__ss_player){
       window.__ss_player.r = Math.round(Math.min(W,H) * 0.032);
       window.__ss_player.y = laneY[window.__ss_player.lane];
       window.__ss_player.targetY = laneY[window.__ss_player.lane];
@@ -130,6 +91,7 @@ if(!o.passed && o.x+o.w/2 < player.x){
   window.addEventListener('resize', resize);
   resize();
 
+  // ---- UI elements ----
   const scoreEl = document.getElementById('score');
   const tapHint = document.getElementById('tapHint');
   const modal = document.getElementById('modal');
@@ -137,13 +99,16 @@ if(!o.passed && o.x+o.w/2 < player.x){
   const modalText = document.getElementById('modalText');
   const shareBtn = document.getElementById('shareBtn');
   const retryBtn = document.getElementById('retryBtn');
+  const tipEl = document.getElementById('tip');
 
+  // ---- audio / haptics ----
   let soundOn = true;
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let audioCtx = null;
-  function playClick(){ if(!soundOn||!AudioCtx) return; if(!audioCtx) audioCtx=new AudioCtx(); const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='sine';o.frequency.value=440;g.gain.value=0.04;o.connect(g);g.connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.08);o.stop(audioCtx.currentTime+0.09); }
+  function playClick(){ if(!soundOn||!AudioCtx) return; if(!audioCtx) audioCtx=new AudioCtx(); const osc=audioCtx.createOscillator(); const g=audioCtx.createGain(); osc.type='sine'; osc.frequency.value=440; g.gain.value=0.04; osc.connect(g); g.connect(audioCtx.destination); osc.start(); g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.08); osc.stop(audioCtx.currentTime+0.09); }
   function vibrate(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
 
+  // ---- player ----
   const player = {
     x: Math.round(W * 0.18),
     lane: 0,
@@ -156,198 +121,77 @@ if(!o.passed && o.x+o.w/2 < player.x){
   };
   window.__ss_player = player;
 
-  let obstacles = [], lanterns = [], particles = [], frame = 0;
+  // ---- world / state ----
+  let obstacles = [], lanterns = [], particles = [];
+  let frame = 0;
   let playing = false, gameOver = false, score = 0;
   let speed = Math.max(3, Math.round(W * 0.006));
-  const speedGrowth = 0;
   let lastSpawnTime = performance.now();
-  const minTimeGap = 400;
-  const minJumpClearanceBase = 8;
+  const minTimeGap = 360;
+
+  // ---- adaptive difficulty ----
+  let difficulty = 0.0;               // 0..1
+  const DIFF_MAX = 1.0;
+  const DIFF_GROW_PER_PASS = 0.012;
+  const DIFF_GROW_PER_SCORE = 0.000015;
+  const BASE_SPEED = Math.max(3, Math.round(W * 0.006));
+  const MAX_SPEED = BASE_SPEED * 1.8;
+  const BASE_OPPOSITE_GAP_FRAC = 0.34;
+  const MIN_OPPOSITE_GAP_FRAC = 0.20;
+
+  function speedForDifficulty(){
+    return BASE_SPEED + (MAX_SPEED - BASE_SPEED) * difficulty;
+  }
+  function oppositeGapForDifficulty(){
+    const frac = BASE_OPPOSITE_GAP_FRAC - (BASE_OPPOSITE_GAP_FRAC - MIN_OPPOSITE_GAP_FRAC) * difficulty;
+    return Math.round(W * Math.max(MIN_OPPOSITE_GAP_FRAC, frac));
+  }
+
+  // ---- alternation tuning ----
+  const alternationChanceWhenFar = 0.78; // increase chances to flip lane
+  const oppositeGapFactorBase = 1.08;    // multiplier for base gap (smaller => faster alternation)
+  const oppositeGapMinWidthFrac = 0.28;
 
   function rand(){ return Math.random(); }
 
-  // tuning params for alternation behavior
-  const alternationChanceWhenFar = 0.82; // when spacing allows, chance to flip lane
-  // how close opposite lanes may appear as fraction of width (smaller => more frequent alternation)
-  const oppositeGapFactor = 1.08; // was 1.4 earlier, now smaller to allow faster alternation
-  const oppositeGapMinWidthFrac = 0.28; // used to compute absolute px
-
-  function resetWorld(){
-    obstacles = []; lanterns = []; particles = [];
-    score = 0; frame = 0;
-    speed = Math.max(3, Math.round((W||800) * 0.006));
-    playing = false; gameOver = false;
-    player.lane = 0; player.y = laneY[0]; player.targetY = laneY[0]; player.slideT = 0; player.originY = player.y;
-    player.x = Math.round(W * 0.18);
-
-    const minSpawnPx = Math.round(player.r * 6);
-    const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.18)); // slightly smaller to allow faster spawns
-    const minOppositeLaneGap = Math.max(Math.round(minHorizontalGap * oppositeGapFactor), Math.round(W * oppositeGapMinWidthFrac));
-
-    let x = W * 0.9;
-    for(let i=0;i<5;i++){
-      pushObstacle(x, {minHorizontalGap, minOppositeLaneGap});
-      if(rand()<0.5) pushLantern(x - (minSpawnPx*0.7));
-      x += minSpawnPx + rand()*(minSpawnPx);
-    }
-    scoreEl.textContent = 'Score: 0';
-    tapHint.style.display = 'block';
-    modal.classList.remove('show');
-    lastSpawnTime = performance.now();
-  }
-
-  /**
-   * Improved alternation logic:
-   * - If the previous obstacle is sufficiently far, high chance to flip lane (alternationChanceWhenFar)
-   * - Opposite-lane minimal gap is reduced by oppositeGapFactor so alternation happens sooner
-   * - Still enforce a safety min gap if opposite-lane obstacles would be dangerously close
-   */
-  function pushObstacle(atX, opts = {}){
-    const minSpawnPx = Math.round(player.r * 6);
-    const minHorizontalGap = opts.minHorizontalGap || Math.max(minSpawnPx, Math.round(W * 0.18));
-    const minOppositeLaneGap = opts.minOppositeLaneGap || Math.max(Math.round(minHorizontalGap * oppositeGapFactor), Math.round(W * oppositeGapMinWidthFrac));
-    const attempts = 4;
-
-    // keep a reasonable base distance from previous obstacle
-    if(obstacles.length){
-      const last = obstacles[obstacles.length-1];
-      const baseMin = Math.min(minHorizontalGap, minOppositeLaneGap);
-      if(atX < last.x + baseMin) atX = last.x + baseMin;
-    }
-
-    for(let i=0;i<attempts;i++){
-      // default random lane
-      let lane = rand()<0.5?0:1;
-
-      // attempt to encourage alternation if spacing allows
-      const lastObs = obstacles[obstacles.length-1];
-      if(lastObs){
-        const dist = Math.abs(lastObs.x - atX);
-        // if we are far enough from last obstacle, encourage flipping lane
-        if(dist >= Math.round(minOppositeLaneGap * 0.6)){
-          if(rand() < alternationChanceWhenFar){
-            lane = 1 - lastObs.lane;
-          }
-        } else {
-          // if too close to last opposite-lane, bias to same lane to avoid impossible pair
-          if(lastObs.lane !== lane && dist < minOppositeLaneGap){
-            if(rand() < 0.9) lane = lastObs.lane;
-          }
-        }
-      }
-
-      const minH = Math.round(Math.max(8, player.r*0.9));
-      const rawH = Math.round(H * (0.10 + rand()*0.28));
-      let h = rawH;
-
-      // vertical safety clearance (a bit larger to be safe)
-      const minJumpClearance = Math.round(player.r * 1.6) + minJumpClearanceBase;
-
-      if(lane === 1){
-        const laneGap = Math.max(0, laneY[1] - laneY[0]);
-        const maxAllowedLowerH = Math.max(minH, laneGap - minJumpClearance - 6);
-        h = Math.min(h, maxAllowedLowerH);
-      } else {
-        const maxUpperH = Math.max(minH, Math.round(H * 0.36));
-        h = Math.min(h, maxUpperH);
-      }
-
-      h = Math.max(minH, h);
-
-      // enforce horizontal spacing depending on lane relationship
-      if(obstacles.length){
-        const last = obstacles[obstacles.length-1];
-        const dist = Math.abs(last.x - atX);
-        if(last.lane !== lane){
-          if(dist < minOppositeLaneGap){
-            atX = last.x + minOppositeLaneGap;
-          }
-        } else {
-          if(dist < minHorizontalGap){
-            atX = last.x + minHorizontalGap;
-          }
-        }
-      }
-
-      obstacles.push({x:atX, lane:lane, h:h, w:Math.round(W*0.06), passed:false});
-      return;
-    }
-
-    // fallback obstacle
-    const fallbackH = Math.max(8, Math.round(player.r*0.9));
-    let finalX = atX;
-    if(obstacles.length){
-      const last = obstacles[obstacles.length-1];
-      const minGap = Math.max(Math.round(player.r*6), Math.round(W * 0.18));
-      if(finalX < last.x + minGap) finalX = last.x + minGap;
-    }
-    obstacles.push({x:finalX, lane:0, h:fallbackH, w:Math.round(W*0.06), passed:false});
-  }
-
-  function pushLantern(x){ const lane = rand()<0.6?1:0; const offsetY = (rand()*0.3-0.15)*(lane===0?H*0.06:H*0.045); lanterns.push({x:x,lane:lane,offsetY:offsetY,taken:false}); }
-
+  // ---- collisions ----
   function circleRectCollision(cx,cy,r,rx,ry,rw,rh){
     const cx0 = Math.max(rx, Math.min(cx, rx+rw));
     const cy0 = Math.max(ry, Math.min(cy, ry+rh));
-    const dx = cx-cx0, dy=cy-cy0;
-    return (dx*dx + dy*dy)<(r*r+0.0001);
+    const dx = cx-cx0, dy = cy-cy0;
+    return (dx*dx + dy*dy) < (r*r + 0.0001);
   }
 
+  // ---- drawing helpers ----
   function setStrokeChalk(){ ctx.lineJoin='round'; ctx.lineCap='round'; ctx.lineWidth=Math.max(2,Math.min(W,H)*0.006); ctx.strokeStyle='rgba(242,243,244,0.96)'; }
 
-  let lastTime=performance.now();
-  function loop(now){
-    const dt=Math.min(40, now-lastTime); lastTime=now; frame+=dt;
-    if(!gameOver && playing){
-      const move = speed*(dt/16);
-      obstacles.forEach(o=>o.x -= move*laneSpeeds[o.lane]);
-      lanterns.forEach(l=>l.x -= move*laneSpeeds[l.lane]);
+  function drawRoof(x,y){
+    ctx.beginPath(); setStrokeChalk(); ctx.strokeStyle='rgba(242,243,244,0.9)';
+    ctx.moveTo(x,y); ctx.lineTo(x+20,y-6); ctx.lineTo(x+40,y+2); ctx.lineTo(x+80,y-4); ctx.lineTo(x+120,y+6); ctx.lineTo(x+patternW,y); ctx.stroke();
+    ctx.beginPath(); ctx.strokeStyle='rgba(35,52,63,0.05)'; ctx.lineWidth=1; ctx.moveTo(x+6,y+6); ctx.lineTo(x+140,y+8); ctx.stroke();
+  }
 
-      const minSpawnPx = Math.round(player.r * 6);
-      const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.18));
-      const minOppositeLaneGap = Math.max(Math.round(minHorizontalGap * oppositeGapFactor), Math.round(W * oppositeGapMinWidthFrac));
+  function drawPlayer(){
+    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.06)'; ctx.ellipse(player.x+6,player.y+player.r*0.9,player.r*1.1,player.r*0.45,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.98)'; ctx.ellipse(player.x,player.y,player.r,player.r*0.95,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.95)'; ctx.lineWidth=Math.max(2,player.r*0.12); ctx.ellipse(player.x,player.y,player.r*0.86,player.r*0.82,0,0,Math.PI*2); ctx.stroke();
+  }
 
-      if((obstacles.length===0 || (obstacles[obstacles.length-1].x < W - minHorizontalGap)) && (now - lastSpawnTime > minTimeGap)){
-        pushObstacle(W + (minSpawnPx*0.6), {minHorizontalGap, minOppositeLaneGap});
-        lastSpawnTime = now;
-      }
+  function drawChimney(ob){
+    const cx = ob.x, lane = ob.lane, w = ob.w, h = ob.h;
+    const by = laneY[lane];
+    const x = cx - w/2, y = by - h;
+    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.95)'; ctx.fillRect(x,y,w,h);
+    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.9)'; ctx.lineWidth=Math.max(2,W*0.006); ctx.strokeRect(x,y,w,h);
+    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.98)'; ctx.fillRect(x-w*0.2,y-w*0.28,w*1.4,w*0.28);
+    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.9)'; ctx.strokeRect(x-w*0.2,y-w*0.28,w*1.4,w*0.28);
+  }
 
-      if(obstacles[0]?.x < -200) obstacles.shift();
-      if(lanterns[0]?.x < -200) lanterns.shift();
-
-      obstacles.forEach(o=>{
-        const rx=o.x-o.w/2, ry=(o.lane===0?laneY[0]-o.h:laneY[1]-o.h);
-        if(circleRectCollision(player.x, player.y, player.r, rx, ry, o.w, o.h)){
-          gameOver=true; playing=false; vibrate(80); playClick(); doGameOver();
-        }
-        if(!o.passed && o.x+o.w/2 < player.x){
-          o.passed=true; score+=12; scoreEl.textContent='Score: '+Math.floor(score);
-        }
-      });
-
-      lanterns.forEach(L=>{ if(!L.taken){
-        const ly=laneY[L.lane]+L.offsetY;
-        if(Math.hypot(player.x-L.x,player.y-ly) < player.r + Math.max(8,player.r*0.6)){
-          L.taken=true; score+=30; spawnParticles(L.x,ly); vibrate(20); playClick(); scoreEl.textContent='Score: '+Math.floor(score);
-        }
-      }});
-
-      if(speedGrowth !== 0){
-        speed += speedGrowth*(dt/16);
-      }
-      score += 0.01*(dt/16);
-    }
-
-    if(player.slideT>0){
-      player.slideT+=dt;
-      const pVal = Math.min(1, player.slideT/player.slideDur);
-      const easing = 1-Math.pow(1-pVal,3);
-      player.y = player.originY + (player.targetY-player.originY)*easing;
-      if(player.slideT >= player.slideDur) { player.slideT=0; player.y=player.targetY; }
-    }
-
-    draw();
-    requestAnimationFrame(loop);
+  function drawLantern(x,y){
+    ctx.beginPath(); ctx.fillStyle='rgba(255,214,165,0.08)'; ctx.ellipse(x,y,22,22,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.fillStyle='rgba(255,214,165,0.98)'; ctx.ellipse(x,y,10,12,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.95)'; ctx.lineWidth=1.5; ctx.ellipse(x,y,10,12,0,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.5)'; ctx.lineWidth=1; ctx.moveTo(x,y-12); ctx.lineTo(x,y-20); ctx.stroke();
   }
 
   function spawnParticles(x,y){
@@ -363,90 +207,244 @@ if(!o.passed && o.x+o.w/2 < player.x){
     }
   }
 
-  function draw(){
-    ctx.clearRect(0,0,W,H);
-    const skyH = Math.round(H*0.18);
-    ctx.save(); ctx.globalAlpha=0.28; ctx.fillStyle='rgba(35,52,63,0.06)'; ctx.fillRect(0,H-skyH-20,W,skyH+20); ctx.restore();
+  // ---- obstacle spawn logic ----
+  function pushLantern(x){ const lane = rand()<0.6?1:0; const offsetY = (rand()*0.3-0.15)*(lane===0?H*0.06:H*0.045); lanterns.push({x:x,lane:lane,offsetY:offsetY,taken:false}); }
 
-    for(let i=0;i<2;i++){
-      const y=laneY[i], sp=laneSpeeds[i];
-      ctx.save(); ctx.translate(-((frame*0.02*sp)%patternW),0);
-      for(let px=-patternW;px<W+patternW;px+=patternW) drawRoof(px,y);
-      ctx.restore();
+  function pushObstacle(atX, opts = {}){
+    // safety / spacing derived from player size + difficulty
+    const minSpawnPx = Math.round(player.r * 6);
+    const baseHorizontalGap = opts.minHorizontalGap || Math.max(minSpawnPx, Math.round(W * 0.18));
+    const dynamicOppositeGap = opts.minOppositeLaneGap || oppositeGapForDifficulty();
+    const attempts = 5;
+
+    // ensure not too close to last obstacle (base)
+    if(obstacles.length){
+      const last = obstacles[obstacles.length-1];
+      const baseMin = Math.min(baseHorizontalGap, dynamicOppositeGap);
+      if(atX < last.x + baseMin) atX = last.x + baseMin;
     }
 
-    lanterns.forEach(L=>{ if(!L.taken) drawLantern(L.x, laneY[L.lane]+L.offsetY); });
-    obstacles.forEach(o=>drawChimney(o));
+    for(let attempt = 0; attempt < attempts; attempt++){
+      // choose lane and encourage alternation if spacing allows
+      let lane = rand() < 0.5 ? 0 : 1;
+      const lastObs = obstacles[obstacles.length-1];
+      if(lastObs){
+        const dist = Math.abs(lastObs.x - atX);
+        // if far enough, high chance to flip lane
+        if(dist >= Math.round(dynamicOppositeGap * 0.6)){
+          if(rand() < alternationChanceWhenFar) lane = 1 - lastObs.lane;
+        } else {
+          // if too close and would be opposite lane, prefer same lane to avoid impossible pair
+          if(lastObs.lane !== lane && dist < dynamicOppositeGap){
+            if(rand() < 0.9) lane = lastObs.lane;
+          }
+        }
+      }
 
-    particles.forEach(p=>{
-      p.age+=16; p.x+=p.vx; p.y+=p.vy; p.vy+=0.06;
-      ctx.beginPath(); ctx.fillStyle=p.c; ctx.globalAlpha=1-(p.age/p.life);
-      ctx.ellipse(p.x,p.y,3,3,0,0,Math.PI*2); ctx.fill();
-    });
-    particles=particles.filter(p=>p.age<p.life);
-    ctx.globalAlpha=1;
+      // height computation with safety caps
+      const minH = Math.round(Math.max(8, player.r * 0.9));
+      const rawH = Math.round(H * (0.10 + rand() * 0.28));
+      let h = rawH;
 
-    drawPlayer();
-    scoreEl.textContent='Score: '+Math.floor(score);
+      // stronger vertical safety clearance that scales slightly with difficulty
+      const minJumpClearance = Math.round(player.r * (1.4 + 0.6 * difficulty)) + 8;
+
+      if(lane === 1){
+        // lower lane: cap height so it doesn't intrude into upper lane's area
+        const laneGap = Math.max(0, laneY[1] - laneY[0]);
+        const maxAllowedLowerH = Math.max(minH, laneGap - minJumpClearance - 6);
+        h = Math.min(h, maxAllowedLowerH);
+      } else {
+        // upper lane: keep reasonable maximum
+        const maxUpperH = Math.max(minH, Math.round(H * 0.36));
+        h = Math.min(h, maxUpperH);
+      }
+      h = Math.max(minH, h);
+
+      // horizontal spacing enforcement depending on lane relationship
+      if(obstacles.length){
+        const last = obstacles[obstacles.length-1];
+        const dist = Math.abs(last.x - atX);
+        if(last.lane !== lane){
+          if(dist < dynamicOppositeGap){
+            atX = last.x + dynamicOppositeGap;
+          }
+        } else {
+          if(dist < baseHorizontalGap){
+            atX = last.x + baseHorizontalGap;
+          }
+        }
+      }
+
+      // push obstacle
+      obstacles.push({ x: atX, lane: lane, h: h, w: Math.round(W * 0.06), passed: false });
+      return;
+    }
+
+    // fallback in case all attempts fail
+    const fallbackH = Math.max(8, Math.round(player.r*0.9));
+    let finalX = atX;
+    if(obstacles.length){
+      const last = obstacles[obstacles.length-1];
+      const minGap = Math.max(Math.round(player.r*6), Math.round(W * 0.18));
+      if(finalX < last.x + minGap) finalX = last.x + minGap;
+    }
+    obstacles.push({x:finalX, lane:0, h:fallbackH, w:Math.round(W*0.06), passed:false});
   }
 
-  function drawRoof(x,y){
-    ctx.beginPath(); setStrokeChalk(); ctx.strokeStyle='rgba(242,243,244,0.9)';
-    ctx.moveTo(x,y); ctx.lineTo(x+20,y-6); ctx.lineTo(x+40,y+2); ctx.lineTo(x+80,y-4); ctx.lineTo(x+120,y+6); ctx.lineTo(x+patternW,y); ctx.stroke();
-    ctx.beginPath(); ctx.strokeStyle='rgba(35,52,63,0.05)'; ctx.lineWidth=1; ctx.moveTo(x+6,y+6); ctx.lineTo(x+140,y+8); ctx.stroke();
-  }
-
-  function drawPlayer(){
-    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.06)'; ctx.ellipse(player.x+6,player.y+player.r*0.9,player.r*1.1,player.r*0.45,0,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.98)'; ctx.ellipse(player.x,player.y,player.r,player.r*0.95,0,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.95)'; ctx.lineWidth=Math.max(2,player.r*0.12); ctx.ellipse(player.x,player.y,player.r*0.86,player.r*0.82,0,0,Math.PI*2); ctx.stroke();
-  }
-
-  function drawChimney(o){
-    const cx=o.x,l=o.lane,w=o.w,h=o.h,by=laneY[l]; const x=cx-w/2,y=by-h;
-    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.95)'; ctx.fillRect(x,y,w,h);
-    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.9)'; ctx.lineWidth=Math.max(2,W*0.006); ctx.strokeRect(x,y,w,h);
-    ctx.beginPath(); ctx.fillStyle='rgba(35,52,63,0.98)'; ctx.fillRect(x-w*0.2,y-w*0.28,w*1.4,w*0.28);
-    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.9)'; ctx.strokeRect(x-w*0.2,y-w*0.28,w*1.4,w*0.28);
-  }
-
-  function drawLantern(x,y){
-    ctx.beginPath(); ctx.fillStyle='rgba(255,214,165,0.08)'; ctx.ellipse(x,y,22,22,0,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.fillStyle='rgba(255,214,165,0.98)'; ctx.ellipse(x,y,10,12,0,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.95)'; ctx.lineWidth=1.5; ctx.ellipse(x,y,10,12,0,0,Math.PI*2); ctx.stroke();
-    ctx.beginPath(); ctx.strokeStyle='rgba(242,243,244,0.5)'; ctx.lineWidth=1; ctx.moveTo(x,y-12); ctx.lineTo(x,y-20); ctx.stroke();
-  }
-
+  // ---- input / control ----
   function switchLane(){
     if(gameOver) return;
-    if(!playing){ playing=true; tapHint.style.display='none'; }
-    const nl=player.lane===0?1:0;
-    player.originY=player.y; player.targetY=laneY[nl]; player.lane=nl; player.slideT=1;
+    if(!playing){ playing = true; tapHint.style.display = 'none'; }
+    const nl = player.lane === 0 ? 1 : 0;
+    player.originY = player.y; player.targetY = laneY[nl]; player.lane = nl; player.slideT = 1;
     playClick(); vibrate(15);
   }
 
+  // ---- game over / reset ----
   function doGameOver(){
-    modalTitle.textContent='You stumbled';
-    modalText.textContent='Score: '+Math.floor(score)+' — Tap to retry';
+    modalTitle.textContent = 'You stumbled';
+    modalText.textContent = 'Score: ' + Math.floor(score) + ' — Tap to retry';
     modal.classList.add('show');
-    const prev=parseInt(localStorage.getItem('ss_highscore')||'0',10);
-    if(Math.floor(score)>prev){ localStorage.setItem('ss_highscore',String(Math.floor(score))); modalTitle.textContent='New High Score!'; }
+    const prev = parseInt(localStorage.getItem('ss_highscore') || '0', 10);
+    if(Math.floor(score) > prev){ localStorage.setItem('ss_highscore', String(Math.floor(score))); modalTitle.textContent = 'New High Score!'; }
   }
 
-  shareBtn.addEventListener('click', ()=>{
-    try{ const link=document.createElement('a'); link.download=`shadow-step-${Date.now()}.png`; link.href=canvas.toDataURL('image/png'); link.click(); } catch(e){ window.open(canvas.toDataURL()); }
-  });
-  retryBtn.addEventListener('click', ()=>{ modal.classList.remove('show'); resetWorld(); });
+  function resetWorld(){
+    obstacles = []; lanterns = []; particles = [];
+    score = 0; frame = 0;
+    difficulty = 0;
+    playing = false; gameOver = false;
+    player.lane = 0; player.y = laneY[0]; player.targetY = laneY[0]; player.slideT = 0; player.originY = player.y;
+    player.x = Math.round(W * 0.18);
+    // compute initial constants
+    const minSpawnPx = Math.round(player.r * 6);
+    const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.18));
+    const minOppositeLaneGap = Math.max(Math.round(minHorizontalGap * oppositeGapFactorBase), Math.round(W * oppositeGapMinWidthFrac));
+    let x = W * 0.9;
+    for(let i=0;i<5;i++){
+      pushObstacle(x, { minHorizontalGap, minOppositeLaneGap });
+      if(rand() < 0.5) pushLantern(x - (minSpawnPx * 0.7));
+      x += minSpawnPx + rand()*(minSpawnPx);
+    }
+    scoreEl.textContent = 'Score: 0';
+    tapHint.style.display = 'block';
+    modal.classList.remove('show');
+    lastSpawnTime = performance.now();
+  }
 
-  canvas.addEventListener('pointerdown', ()=>{
+  // ---- main loop ----
+  let lastTime = performance.now();
+  function loop(now){
+    const dt = Math.min(40, now - lastTime);
+    lastTime = now;
+    frame += dt;
+
+    if(!gameOver && playing){
+      // update speed from difficulty
+      speed = speedForDifficulty();
+      const move = speed * (dt / 16);
+      obstacles.forEach(ob => ob.x -= move);
+      lanterns.forEach(l => l.x -= move);
+
+      // spawn logic
+      const minSpawnPx = Math.round(player.r * 6);
+      const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.18));
+      const minOppositeLaneGap = oppositeGapForDifficulty();
+
+      if((obstacles.length === 0 || (obstacles[obstacles.length-1].x < W - minHorizontalGap)) && (now - lastSpawnTime > minTimeGap)){
+        pushObstacle(W + (minSpawnPx * 0.6), { minHorizontalGap, minOppositeLaneGap });
+        lastSpawnTime = now;
+      }
+
+      // cleanup out-of-screen objects
+      if(obstacles[0]?.x < -200) obstacles.shift();
+      if(lanterns[0]?.x < -200) lanterns.shift();
+
+      // collisions & scoring
+      obstacles.forEach(ob => {
+        const rx = ob.x - ob.w/2;
+        const ry = (ob.lane === 0 ? laneY[0] - ob.h : laneY[1] - ob.h);
+        if(circleRectCollision(player.x, player.y, player.r, rx, ry, ob.w, ob.h)){
+          gameOver = true; playing = false; vibrate(80); playClick(); doGameOver();
+        }
+        if(!ob.passed && ob.x + ob.w/2 < player.x){
+          ob.passed = true;
+          score += 12;
+          // increase difficulty gradually when player passes obstacles
+          difficulty = Math.min(DIFF_MAX, difficulty + DIFF_GROW_PER_PASS + DIFF_GROW_PER_SCORE * score);
+          scoreEl.textContent = 'Score: ' + Math.floor(score);
+        }
+      });
+
+      lanterns.forEach(L => {
+        if(!L.taken){
+          const ly = laneY[L.lane] + L.offsetY;
+          if(Math.hypot(player.x - L.x, player.y - ly) < player.r + Math.max(8, player.r*0.6)){
+            L.taken = true; score += 30; spawnParticles(L.x, ly); vibrate(20); playClick(); scoreEl.textContent = 'Score: ' + Math.floor(score);
+          }
+        }
+      });
+
+      // small gradual score drift for heartbeat (optional)
+      score += 0.01 * (dt/16);
+    }
+
+    // player slide easing
+    if(player.slideT > 0){
+      player.slideT += dt;
+      const pVal = Math.min(1, player.slideT / player.slideDur);
+      const easing = 1 - Math.pow(1 - pVal, 3);
+      player.y = player.originY + (player.targetY - player.originY) * easing;
+      if(player.slideT >= player.slideDur){ player.slideT = 0; player.y = player.targetY; }
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    const skyH = Math.round(H*0.18);
+    ctx.save(); ctx.globalAlpha = 0.28; ctx.fillStyle = 'rgba(35,52,63,0.06)'; ctx.fillRect(0, H-skyH-20, W, skyH+20); ctx.restore();
+
+    for(let i=0;i<2;i++){
+      const y = laneY[i];
+      ctx.save(); ctx.translate(-((frame * 0.02) % patternW), 0);
+      for(let px = -patternW; px < W + patternW; px += patternW) drawRoof(px, y);
+      ctx.restore();
+    }
+
+    lanterns.forEach(L => { if(!L.taken) drawLantern(L.x, laneY[L.lane] + L.offsetY); });
+    obstacles.forEach(ob => drawChimney(ob));
+
+    particles.forEach(p => {
+      p.age += 16; p.x += p.vx; p.y += p.vy; p.vy += 0.06;
+      ctx.beginPath(); ctx.fillStyle = p.c; ctx.globalAlpha = 1 - (p.age / p.life);
+      ctx.ellipse(p.x, p.y, 3, 3, 0, 0, Math.PI*2); ctx.fill();
+    });
+    particles = particles.filter(p => p.age < p.life);
+    ctx.globalAlpha = 1;
+
+    drawPlayer();
+    scoreEl.textContent = 'Score: ' + Math.floor(score);
+  }
+
+  // ---- events ----
+  shareBtn.addEventListener('click', () => {
+    try{ const link = document.createElement('a'); link.download = `shadow-step-${Date.now()}.png`; link.href = canvas.toDataURL('image/png'); link.click(); } catch(e){ window.open(canvas.toDataURL()); }
+  });
+  retryBtn.addEventListener('click', () => { modal.classList.remove('show'); resetWorld(); });
+
+  canvas.addEventListener('pointerdown', () => {
     if(gameOver) resetWorld();
     else switchLane();
   });
-  window.addEventListener('keydown', e=>{
-    if(e.code==='Space'){ e.preventDefault(); if(gameOver) resetWorld(); else switchLane(); }
+  window.addEventListener('keydown', e => {
+    if(e.code === 'Space'){ e.preventDefault(); if(gameOver) resetWorld(); else switchLane(); }
   });
 
-  // initial setup
+  // ---- start ----
   dims();
   resetWorld();
   requestAnimationFrame(loop);

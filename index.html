@@ -66,6 +66,40 @@
   let DPR = Math.max(1, window.devicePixelRatio || 1);
   let W = 800, H = 600, patternW;
 
+  // === Adaptive difficulty params (tweak these) ===
+let difficulty = 0.0;              // 0 = easy start, grows with progress
+const DIFF_GROW_PER_PASS = 0.015;  // how much difficulty increments per passed obstacle
+const DIFF_GROW_PER_SCORE = 0.00002; // extra growth per score (small)
+const DIFF_MAX = 1.0;              // cap difficulty
+const BASE_SPEED = Math.max(3, Math.round(W * 0.006));
+const MAX_SPEED = BASE_SPEED * 1.9; // how fast it can get (cap)
+const BASE_OPPOSITE_GAP_FRAC = 0.34; // fraction of W
+const MIN_OPPOSITE_GAP_FRAC = 0.20;  // tightest fraction
+
+function speedForDifficulty() {
+  // linear interpolation between BASE_SPEED and MAX_SPEED
+  return BASE_SPEED + (MAX_SPEED - BASE_SPEED) * (difficulty / DIFF_MAX);
+}
+
+function oppositeGapForDifficulty() {
+  // reduces gap as difficulty grows, clamped
+  const frac = BASE_OPPOSITE_GAP_FRAC - (BASE_OPPOSITE_GAP_FRAC - MIN_OPPOSITE_GAP_FRAC) * (difficulty / DIFF_MAX);
+  return Math.round(W * Math.max(MIN_OPPOSITE_GAP_FRAC, frac));
+}
+
+// In your loop where you previously updated speed or computed gaps, replace with:
+// speed = speedForDifficulty();
+// const minOppositeLaneGap = oppositeGapForDifficulty();
+
+// Then after you mark an obstacle as passed (inside obstacles.forEach):
+if(!o.passed && o.x+o.w/2 < player.x){
+  o.passed=true;
+  score+=12;
+  // grow difficulty as reward for surviving
+  difficulty = Math.min(DIFF_MAX, difficulty + DIFF_GROW_PER_PASS + DIFF_GROW_PER_SCORE * score);
+  scoreEl.textContent='Score: '+Math.floor(score);
+}
+
   // lane center positions declared early to avoid TDZ issues
   let laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
   const laneSpeeds = [1.0, 1.0];

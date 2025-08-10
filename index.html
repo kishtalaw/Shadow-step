@@ -66,6 +66,9 @@
   let DPR = Math.max(1, window.devicePixelRatio || 1);
   let W = 800, H = 600, patternW;
 
+  // ensure laneY exists before any function references it
+  let laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
+
   // Make both lanes move at same speed now
   const laneSpeeds = [1.0, 1.0];
 
@@ -110,9 +113,6 @@
   let audioCtx = null;
   function playClick(){ if(!soundOn||!AudioCtx) return; if(!audioCtx) audioCtx=new AudioCtx(); const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='sine';o.frequency.value=440;g.gain.value=0.04;o.connect(g);g.connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.08);o.stop(audioCtx.currentTime+0.09); }
   function vibrate(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
-
-  // lane centers
-  let laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
 
   // player initial values
   const player = {

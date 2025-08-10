@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Shadow Step — Fixed Version</title>
+  <title>Shadow Step — Alternation Tuning</title>
   <style>
     :root {
       --bg-top: #E8F7FF;
@@ -56,7 +56,7 @@
           <button class="btn ghost" id="retryBtn">Retry</button>
         </div>
       </div>
-      <footer>Tip: lanes move at the same speed now — use rhythm to survive.</footer>
+      <footer>Tip: lanes now alternate more frequently — use rhythm to survive.</footer>
     </div>
   </div>
 <script>
@@ -66,21 +66,17 @@
   let DPR = Math.max(1, window.devicePixelRatio || 1);
   let W = 800, H = 600, patternW;
 
-  // ensure laneY exists before any function references it
+  // lane center positions declared early to avoid TDZ issues
   let laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
-
-  // Make both lanes move at same speed now
   const laneSpeeds = [1.0, 1.0];
 
   function dims(){
     W = canvas.width / DPR;
     H = canvas.height / DPR;
     patternW = Math.max(120, Math.round(W * 0.18));
-    // recompute lane Y positions so resize keeps behavior consistent
     laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
     if(window.__ss_player) {
       window.__ss_player.r = Math.round(Math.min(W,H) * 0.032);
-      // keep player vertical positions consistent if possible
       window.__ss_player.y = laneY[window.__ss_player.lane];
       window.__ss_player.targetY = laneY[window.__ss_player.lane];
       window.__ss_player.originY = window.__ss_player.y;
@@ -107,14 +103,13 @@
   const modalText = document.getElementById('modalText');
   const shareBtn = document.getElementById('shareBtn');
   const retryBtn = document.getElementById('retryBtn');
-  
+
   let soundOn = true;
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let audioCtx = null;
   function playClick(){ if(!soundOn||!AudioCtx) return; if(!audioCtx) audioCtx=new AudioCtx(); const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='sine';o.frequency.value=440;g.gain.value=0.04;o.connect(g);g.connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.08);o.stop(audioCtx.currentTime+0.09); }
   function vibrate(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
 
-  // player initial values
   const player = {
     x: Math.round(W * 0.18),
     lane: 0,
@@ -129,14 +124,19 @@
 
   let obstacles = [], lanterns = [], particles = [], frame = 0;
   let playing = false, gameOver = false, score = 0;
-  // initial speed; we keep it constant to maintain even difficulty
   let speed = Math.max(3, Math.round(W * 0.006));
-  const speedGrowth = 0; // set to 0 to keep difficulty equal throughout
+  const speedGrowth = 0;
   let lastSpawnTime = performance.now();
   const minTimeGap = 400;
   const minJumpClearanceBase = 8;
 
   function rand(){ return Math.random(); }
+
+  // tuning params for alternation behavior
+  const alternationChanceWhenFar = 0.82; // when spacing allows, chance to flip lane
+  // how close opposite lanes may appear as fraction of width (smaller => more frequent alternation)
+  const oppositeGapFactor = 1.08; // was 1.4 earlier, now smaller to allow faster alternation
+  const oppositeGapMinWidthFrac = 0.28; // used to compute absolute px
 
   function resetWorld(){
     obstacles = []; lanterns = []; particles = [];
@@ -146,11 +146,9 @@
     player.lane = 0; player.y = laneY[0]; player.targetY = laneY[0]; player.slideT = 0; player.originY = player.y;
     player.x = Math.round(W * 0.18);
 
-    // compute spacing constants based on current sizes
     const minSpawnPx = Math.round(player.r * 6);
-    const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.22));
-    // larger gap required when alternating lanes to prevent impossible pairs
-    const minOppositeLaneGap = Math.max(minHorizontalGap * 1.4, Math.round(W * 0.34));
+    const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.18)); // slightly smaller to allow faster spawns
+    const minOppositeLaneGap = Math.max(Math.round(minHorizontalGap * oppositeGapFactor), Math.round(W * oppositeGapMinWidthFrac));
 
     let x = W * 0.9;
     for(let i=0;i<5;i++){
@@ -165,34 +163,42 @@
   }
 
   /**
-   * spawn an obstacle at atX (adjusted to respect spacing)
-   * opts.minHorizontalGap - gap for same-lane obstacles
-   * opts.minOppositeLaneGap - larger gap required if previous obstacle is opposite-lane
+   * Improved alternation logic:
+   * - If the previous obstacle is sufficiently far, high chance to flip lane (alternationChanceWhenFar)
+   * - Opposite-lane minimal gap is reduced by oppositeGapFactor so alternation happens sooner
+   * - Still enforce a safety min gap if opposite-lane obstacles would be dangerously close
    */
   function pushObstacle(atX, opts = {}){
     const minSpawnPx = Math.round(player.r * 6);
-    const minHorizontalGap = opts.minHorizontalGap || Math.max(minSpawnPx, Math.round(W * 0.22));
-    const minOppositeLaneGap = opts.minOppositeLaneGap || Math.max(minHorizontalGap * 1.4, Math.round(W * 0.34));
+    const minHorizontalGap = opts.minHorizontalGap || Math.max(minSpawnPx, Math.round(W * 0.18));
+    const minOppositeLaneGap = opts.minOppositeLaneGap || Math.max(Math.round(minHorizontalGap * oppositeGapFactor), Math.round(W * oppositeGapMinWidthFrac));
     const attempts = 4;
 
-    // ensure we are not spawning too close to the last obstacle
+    // keep a reasonable base distance from previous obstacle
     if(obstacles.length){
       const last = obstacles[obstacles.length-1];
-      const requiredGap = (last.lane !== undefined && last.lane !== null && last.lane !== 0 && last.lane !== 1) ? minHorizontalGap : minHorizontalGap;
-      // we'll compute a sensible minimum depending on lane later below; for now ensure a base gap
-      if(atX < last.x + Math.min(minHorizontalGap, minOppositeLaneGap)) atX = last.x + Math.min(minHorizontalGap, minOppositeLaneGap);
+      const baseMin = Math.min(minHorizontalGap, minOppositeLaneGap);
+      if(atX < last.x + baseMin) atX = last.x + baseMin;
     }
 
     for(let i=0;i<attempts;i++){
+      // default random lane
       let lane = rand()<0.5?0:1;
 
-      // if last obstacle exists and is close, bias lane choice and spacing to avoid impossible combos
+      // attempt to encourage alternation if spacing allows
       const lastObs = obstacles[obstacles.length-1];
       if(lastObs){
         const dist = Math.abs(lastObs.x - atX);
-        if(dist < minOppositeLaneGap && lastObs.lane !== lane){
-          // if too close and opposite-lane, prefer the same lane to avoid blocking both lanes
-          if(rand() < 0.9) lane = lastObs.lane;
+        // if we are far enough from last obstacle, encourage flipping lane
+        if(dist >= Math.round(minOppositeLaneGap * 0.6)){
+          if(rand() < alternationChanceWhenFar){
+            lane = 1 - lastObs.lane;
+          }
+        } else {
+          // if too close to last opposite-lane, bias to same lane to avoid impossible pair
+          if(lastObs.lane !== lane && dist < minOppositeLaneGap){
+            if(rand() < 0.9) lane = lastObs.lane;
+          }
         }
       }
 
@@ -200,33 +206,29 @@
       const rawH = Math.round(H * (0.10 + rand()*0.28));
       let h = rawH;
 
-      // stronger vertical safety clearance to avoid blocking other lane
+      // vertical safety clearance (a bit larger to be safe)
       const minJumpClearance = Math.round(player.r * 1.6) + minJumpClearanceBase;
 
       if(lane === 1){
-        // lower lane chimney: cap so it doesn't reach into upper lane center
         const laneGap = Math.max(0, laneY[1] - laneY[0]);
         const maxAllowedLowerH = Math.max(minH, laneGap - minJumpClearance - 6);
         h = Math.min(h, maxAllowedLowerH);
       } else {
-        // upper lane: keep reasonable maximum
         const maxUpperH = Math.max(minH, Math.round(H * 0.36));
         h = Math.min(h, maxUpperH);
       }
 
       h = Math.max(minH, h);
 
-      // determine required horizontal gap to previous obstacle depending on lane relationship
+      // enforce horizontal spacing depending on lane relationship
       if(obstacles.length){
         const last = obstacles[obstacles.length-1];
         const dist = Math.abs(last.x - atX);
         if(last.lane !== lane){
-          // if opposite lane, enforce larger gap
           if(dist < minOppositeLaneGap){
             atX = last.x + minOppositeLaneGap;
           }
         } else {
-          // same lane: enforce normal gap
           if(dist < minHorizontalGap){
             atX = last.x + minHorizontalGap;
           }
@@ -237,7 +239,7 @@
       return;
     }
 
-    // fallback
+    // fallback obstacle
     const fallbackH = Math.max(8, Math.round(player.r*0.9));
     let finalX = atX;
     if(obstacles.length){
@@ -267,10 +269,9 @@
       obstacles.forEach(o=>o.x -= move*laneSpeeds[o.lane]);
       lanterns.forEach(l=>l.x -= move*laneSpeeds[l.lane]);
 
-      // recompute spawn constants
       const minSpawnPx = Math.round(player.r * 6);
-      const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.22));
-      const minOppositeLaneGap = Math.max(minHorizontalGap * 1.4, Math.round(W * 0.34));
+      const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.18));
+      const minOppositeLaneGap = Math.max(Math.round(minHorizontalGap * oppositeGapFactor), Math.round(W * oppositeGapMinWidthFrac));
 
       if((obstacles.length===0 || (obstacles[obstacles.length-1].x < W - minHorizontalGap)) && (now - lastSpawnTime > minTimeGap)){
         pushObstacle(W + (minSpawnPx*0.6), {minHorizontalGap, minOppositeLaneGap});
@@ -297,11 +298,10 @@
         }
       }});
 
-      // keep speed stable (no continuous growth)
       if(speedGrowth !== 0){
         speed += speedGrowth*(dt/16);
       }
-      score += 0.01*(dt/16); // minor score drift left intact
+      score += 0.01*(dt/16);
     }
 
     if(player.slideT>0){

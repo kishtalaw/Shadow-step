@@ -64,13 +64,25 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha: true });
   let DPR = Math.max(1, window.devicePixelRatio || 1);
-  let W, H, patternW;
+  let W = 800, H = 600, patternW;
+
+  // laneY will be recalculated on resize
+  let laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
+  const laneSpeeds = [1.0, 0.6];
 
   function dims(){
     W = canvas.width / DPR;
     H = canvas.height / DPR;
     patternW = Math.max(120, Math.round(W * 0.18));
-    if(window.__ss_player) window.__ss_player.r = Math.round(Math.min(W,H) * 0.032);
+    // recompute lane Y positions so resize keeps behavior consistent
+    laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
+    if(window.__ss_player) {
+      window.__ss_player.r = Math.round(Math.min(W,H) * 0.032);
+      // keep player vertical positions consistent if possible
+      window.__ss_player.y = laneY[window.__ss_player.lane];
+      window.__ss_player.targetY = laneY[window.__ss_player.lane];
+      window.__ss_player.originY = window.__ss_player.y;
+    }
   }
 
   function resize(){
@@ -99,9 +111,7 @@
   function playClick(){ if(!soundOn||!AudioCtx) return; if(!audioCtx) audioCtx=new AudioCtx(); const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='sine';o.frequency.value=440;g.gain.value=0.04;o.connect(g);g.connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.08);o.stop(audioCtx.currentTime+0.09); }
   function vibrate(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
 
-  dims();
-  const laneY = [Math.round(H * 0.42), Math.round(H * 0.68)];
-  const laneSpeeds = [1.0, 0.6];
+  // player initial values (r and lane Y will be overwritten on dims/resize)
   const player = {
     x: Math.round(W * 0.18),
     lane: 0,
@@ -117,10 +127,10 @@
   let obstacles = [], lanterns = [], particles = [], frame = 0;
   let playing = false, gameOver = false, score = 0;
   let speed = Math.max(3, Math.round(W * 0.006));
-  const minSpawnPx = player.r * 6;
-  const minTimeGap = 400;
+  // minSpawnPx is a base spacing unit (recomputed where needed)
   let lastSpawnTime = performance.now();
-  const minJumpClearance = Math.round(player.r * 1.2) + 8;
+  const minTimeGap = 400;
+  const minJumpClearanceBase = 8;
 
   function rand(){ return Math.random(); }
 
@@ -130,35 +140,95 @@
     speed = Math.max(3, Math.round((W||800) * 0.006));
     playing = false; gameOver = false;
     player.lane = 0; player.y = laneY[0]; player.targetY = laneY[0]; player.slideT = 0; player.originY = player.y;
+    player.x = Math.round(W * 0.18);
+
+    // compute spacing constants based on current sizes
+    const minSpawnPx = Math.round(player.r * 6);
+    const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.22));
+
     let x = W * 0.9;
     for(let i=0;i<5;i++){
-      pushObstacle(x);
+      // ensure initial obstacles keep spacing
+      pushObstacle(x, {minHorizontalGap});
       if(rand()<0.5) pushLantern(x - (minSpawnPx*0.7));
       x += minSpawnPx + rand()*(minSpawnPx);
     }
     scoreEl.textContent = 'Score: 0';
     tapHint.style.display = 'block';
     modal.classList.remove('show');
+    lastSpawnTime = performance.now();
   }
 
-  function pushObstacle(atX){
-    const attempts = 3;
+  /**
+   * pushObstacle(atX, opts)
+   * - atX: desired spawn x
+   * - opts:
+   *    minHorizontalGap: force a minimum spacing from previous obstacle x (in px)
+   */
+  function pushObstacle(atX, opts = {}){
+    const minSpawnPx = Math.round(player.r * 6);
+    const minHorizontalGap = opts.minHorizontalGap || Math.max(minSpawnPx, Math.round(W * 0.22));
+    const attempts = 4;
+    // Make sure we don't spawn too close to the previous obstacle
+    if(obstacles.length){
+      const last = obstacles[obstacles.length-1];
+      const desiredMinX = last.x + minHorizontalGap;
+      if(atX < desiredMinX) atX = desiredMinX;
+    }
+
     for(let i=0;i<attempts;i++){
-      const lane = rand()<0.5?0:1;
-      const maxH = Math.max(0, Math.floor(laneY[lane] - minJumpClearance));
-      const rawH = Math.round(H * (0.10 + rand()*0.28));
-      let h = Math.min(rawH, maxH);
-      if(maxH <= Math.round(player.r*0.6)){
-        if(i<attempts-1) continue;
-        h = Math.max(Math.round(player.r*0.6), maxH);
+      // choose lane but bias away from making tight alternating-lane pairs
+      let lane = rand()<0.5?0:1;
+      // if last obstacle exists and is too close and lane differs, prefer same lane to avoid blocking both
+      const lastObs = obstacles[obstacles.length-1];
+      if(lastObs && Math.abs(lastObs.x - atX) < minHorizontalGap && lastObs.lane !== lane){
+        if(rand() < 0.8) lane = lastObs.lane; // high chance prefer same lane
       }
+
+      // compute vertical limits for this lane
       const minH = Math.round(Math.max(8, player.r*0.9));
+      const rawH = Math.round(H * (0.10 + rand()*0.28));
+      let h = rawH;
+
+      // safety vertical clearance to avoid blocking the other lane's center
+      const minJumpClearance = Math.round(player.r * 1.2) + minJumpClearanceBase;
+
+      if(lane === 1){
+        // lower lane chimney: cap so it doesn't reach into upper lane center
+        // compute vertical gap between lanes
+        const laneGap = Math.max(0, laneY[1] - laneY[0]);
+        const maxAllowedLowerH = Math.max(minH, laneGap - minJumpClearance - 4);
+        h = Math.min(h, maxAllowedLowerH);
+      } else {
+        // upper lane: also keep reasonable maximum (don't create absurdly tall chimneys)
+        const maxUpperH = Math.max(minH, Math.round(H * 0.36));
+        h = Math.min(h, maxUpperH);
+      }
+
+      // final clamp to not be smaller than minH
       h = Math.max(minH, h);
+
+      // If the computed max for lower lane ends up tiny (rare), fallback or retry
+      if(h < minH){
+        if(i < attempts-1) continue;
+        h = minH;
+      }
+
+      // push obstacle with possibly adjusted atX
       obstacles.push({x:atX, lane:lane, h:h, w:Math.round(W*0.06), passed:false});
       return;
     }
+
+    // fallback single simple obstacle
     const fallbackH = Math.max(8, Math.round(player.r*0.9));
-    obstacles.push({x:atX, lane:0, h:fallbackH, w:Math.round(W*0.06), passed:false});
+    // if still here, push on lane 0
+    let finalX = atX;
+    if(obstacles.length){
+      const last = obstacles[obstacles.length-1];
+      const minGap = Math.max(Math.round(player.r*6), Math.round(W * 0.18));
+      if(finalX < last.x + minGap) finalX = last.x + minGap;
+    }
+    obstacles.push({x:finalX, lane:0, h:fallbackH, w:Math.round(W*0.06), passed:false});
   }
 
   function pushLantern(x){ const lane = rand()<0.6?1:0; const offsetY = (rand()*0.3-0.15)*(lane===0?H*0.06:H*0.045); lanterns.push({x:x,lane:lane,offsetY:offsetY,taken:false}); }
@@ -180,8 +250,13 @@
       obstacles.forEach(o=>o.x -= move*laneSpeeds[o.lane]);
       lanterns.forEach(l=>l.x -= move*laneSpeeds[l.lane]);
 
-      if((obstacles.length===0 || (obstacles[obstacles.length-1].x < W - minSpawnPx)) && (now - lastSpawnTime > minTimeGap)){
-        pushObstacle(W + (minSpawnPx*0.6));
+      // recompute spawn gaps for this frame
+      const minSpawnPx = Math.round(player.r * 6);
+      const minHorizontalGap = Math.max(minSpawnPx, Math.round(W * 0.22));
+
+      // spawn only when last obstacle is sufficiently left, and respecting minTimeGap
+      if((obstacles.length===0 || (obstacles[obstacles.length-1].x < W - minHorizontalGap)) && (now - lastSpawnTime > minTimeGap)){
+        pushObstacle(W + (minSpawnPx*0.6), {minHorizontalGap});
         lastSpawnTime = now;
       }
 
@@ -317,6 +392,8 @@
     if(e.code==='Space'){ e.preventDefault(); if(gameOver) resetWorld(); else switchLane(); }
   });
 
+  // recompute sizes when the page first loads (ensure player.r/laneY in sync)
+  dims();
   resetWorld();
   requestAnimationFrame(loop);
 })();
